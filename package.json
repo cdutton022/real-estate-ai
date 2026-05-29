@@ -1,27 +1,17 @@
 {
   "name": "real-estate-ai",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "AI Real Estate Marketing Kit Generator",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
     "vercel-build": "echo 'Skipping compilation step... Running live Node server.'"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
-    "@supabase/supabase-js": "^2.106.2",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "multer": "^2.1.1",
-    "next": "^16.2.6",
-    "openai": "^6.39.1",
-    "pdf-parse-fork": "^1.2.0",
-    "pdfreader": "^3.0.8",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "stripe": "^22.2.0"
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "openai": "^4.52.0",
+    "pdfreader": "^3.0.2"
   }
 }
