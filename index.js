@@ -4,10 +4,11 @@ require('dotenv').config();
 
 const app = express();
 
-// Set the incoming server JSON text limit explicitly to 10MB
+// Configure the express cloud router to handle up to 10MB of data text smoothly
 app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// 1. FRONTEND HOME ROUTE: Robust UI with Client-Side Chunk Processing
+// 1. FRONTEND HOME ROUTE: Interactive Web Interface with client-side text extractor
 app.get('/', (req, res) => {
   res.send(`
 <!DOCTYPE html>
@@ -17,6 +18,7 @@ app.get('/', (req, res) => {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Real Estate AI Marketing Kit Generator</title>
     <script src="https://tailwindcss.com"></script>
+    <!-- Include highly stable PDF text extraction core libraries directly in the browser -->
     <script src="https://cloudflare.com"></script>
 </head>
 <body class="bg-gray-50 font-sans min-h-screen flex flex-col justify-between">
@@ -49,6 +51,7 @@ app.get('/', (req, res) => {
         </div>
     </main>
     <script>
+        // Explicitly set the background worker script location required by PDF.js
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cloudflare.com';
 
         const fileInput = document.getElementById('pdfFile');
@@ -65,61 +68,70 @@ app.get('/', (req, res) => {
             }
         });
 
-        // Robust client-side extractor that splits pages into memory streams to dodge server limits
-        async function extractTextFromPdf(file) {
-            const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            let fullText = "";
-            
-            // Extract the core content pages (up to 15 pages for deep inspection reports)
-            const pagesToRead = Math.min(pdf.numPages, 15);
-            for (let i = 1; i <= pagesToRead; i++) {
-                try {
-                    const page = await pdf.getPage(i);
-                    const textContent = await page.getTextContent();
-                    const pageText = textContent.items.map(item => item.str).join(" ");
-                    fullText += pageText + " ";
-                } catch (e) {
-                    console.warn("Skipping unreadable characters on page " + i);
-                }
-            }
-            return fullText;
+        // Safe browser reader that parses raw PDF text arrays locally on the client screen
+        function extractTextFromPdf(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async function() {
+                    try {
+                        const typedarray = new Uint8Array(this.result);
+                        const pdf = await pdfjsLib.getDocument(typedarray).promise;
+                        let extractedText = "";
+                        
+                        // Process the top 15 data pages (perfect for large 10MB inspection files)
+                        const maxPages = Math.min(pdf.numPages, 15);
+                        for (let i = 1; i <= maxPages; i++) {
+                            const page = await pdf.getPage(i);
+                            const textContent = await page.getTextContent();
+                            const pageText = textContent.items.map(item => item.str).join(" ");
+                            extractedText += pageText + " ";
+                        }
+                        resolve(extractedText);
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                reader.onerror = err => reject(err);
+                reader.readAsArrayBuffer(file);
+            });
         }
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             submitBtn.disabled = true;
-            submitBtn.textContent = "Processing Large Document (Up to 10MB)... 📝";
+            submitBtn.textContent = "Extracting Document Text (Up to 10MB)... 📝";
             outputSection.classList.add('hidden');
 
             try {
-                const file = fileInput.files[0];
-                const extractedText = await extractTextFromPdf(file);
+                // Securely index the target file from the input array container
+                const targetFile = fileInput.files[0];
+                const cleanText = await extractTextFromPdf(targetFile);
 
-                if (!extractedText || extractedText.trim().length === 0) {
-                    alert("This PDF seems to be an image-only scan. Please upload a document with selectable text.");
+                if (!cleanText || cleanText.trim().length === 0) {
+                    alert("Unable to extract text. Please ensure the PDF is not an unreadable picture scan.");
                     return;
                 }
 
-                submitBtn.textContent = "Connecting to OpenAI Node... ⏳";
+                submitBtn.textContent = "Connecting to OpenAI Engine... ⏳";
 
+                // Post a clean JSON object containing the string instead of a heavy binary file stream
                 const response = await fetch('/api/upload', { 
                     method: 'POST', 
-                    body: JSON.stringify({ text: extractedText }),
+                    body: JSON.stringify({ text: cleanText }),
                     headers: { 'Content-Type': 'application/json' }
                 });
                 
                 const data = await response.json();
                 if (data.marketingKit) {
                     localStorage.setItem('lastGeneratedKit', data.marketingKit);
-                    // REDIRECT TARGET PAYWALL
+                    // REDIRECT TARGET PAYWALL: Swaps seamlessly into your Stripe checkpoint link
                     window.location.href = "https://buy.stripe.com/test_00w6oG37U4tD6h6bYs4Vy00";
                 } else {
-                    alert(data.error || "An unexpected error occurred during generation.");
+                    alert(data.error || "An unexpected generation error occurred.");
                 }
             } catch (err) {
                 console.error(err);
-                alert("Payload connection cleared successfully. Processing request...");
+                alert("Failed to connect to the cloud engine network.");
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = "Generate Marketing Kit ($20)";
@@ -131,20 +143,19 @@ app.get('/', (req, res) => {
   `);
 });
 
-// 2. BACKEND API ROUTE: Evaluates the optimized core text chunk 
+// 2. BACKEND API ROUTE: Evaluates the extracted text and formats the OpenAI payload
 app.post('/api/upload', async (req, res) => {
   try {
     const { text } = req.body;
     if (!text || text.trim().length === 0) {
-      return res.status(400).json({ error: "Empty string matrix package." });
+      return res.status(400).json({ error: "Missing required text metrics payload." });
     }
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     
-    // Safely clip the text to stay comfortably within OpenAI context tokens
     const prompt = `
-      You are an elite real estate copywriter. Analyze the following property data:
-      "${text.substring(0, 7000)}" 
+      You are an elite real estate copywriter. Analyze the following property data text:
+      "${text.substring(0, 6000)}" 
       Generate a professional marketing kit with an [MLS LISTING] and a [SOCIAL MEDIA SCRIPT].
     `;
 
@@ -157,8 +168,8 @@ app.post('/api/upload', async (req, res) => {
     res.json({ marketingKit: response.choices.message.content });
 
   } catch (error) {
-    console.error("Cloud engine processing fail:", error);
-    res.status(500).json({ error: "The cloud node timed out processing the data matrix." });
+    console.error("Cloud Node Processing Failure:", error);
+    res.status(500).json({ error: "The backend server engine failed to generate marketing resources." });
   }
 });
 
