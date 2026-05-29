@@ -82,7 +82,7 @@ app.get('/', (req, res) => {
                 const data = await response.json();
                 if (data.marketingKit) {
                     localStorage.setItem('lastGeneratedKit', data.marketingKit);
-                    window.location.href = "PASTE_YOUR_STRIPE_LINK_HERE";
+                    window.location.href = "https://buy.stripe.com/test_00w6oG37U4tD6h6bYs4Vy00";
                 } else {
                     alert(data.error || "An unexpected error occurred.");
                 }
