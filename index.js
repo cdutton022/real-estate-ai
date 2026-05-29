@@ -1,15 +1,11 @@
 const express = require('express');
-const { PdfReader } = require('pdfreader');
 const { OpenAI } = require('openai');
 require('dotenv').config();
 
 const app = express();
+app.use(express.json()); // Expect clean, lightweight JSON instead of heavy binary files
 
-// Increase JSON limits so your serverless app can accept large base64 text strings
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// 1. FRONTEND HOME ROUTE: Interactive Web Dashboard
+// 1. FRONTEND HOME ROUTE: Interactive Web Interface with local PDF reading
 app.get('/', (req, res) => {
   res.send(`
 <!DOCTYPE html>
@@ -19,6 +15,8 @@ app.get('/', (req, res) => {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Real Estate AI Marketing Kit Generator</title>
     <script src="https://tailwindcss.com"></script>
+    <!-- Include Mozilla's official fast PDF.js engine -->
+    <script src="https://cloudflare.com"></script>
 </head>
 <body class="bg-gray-50 font-sans min-h-screen flex flex-col justify-between">
     <header class="bg-white shadow-sm py-4 px-6 border-b">
@@ -50,6 +48,9 @@ app.get('/', (req, res) => {
         </div>
     </main>
     <script>
+        // Initialize PDF worker code
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cloudflare.com';
+
         const fileInput = document.getElementById('pdfFile');
         const fileNameDiv = document.getElementById('fileName');
         const form = document.getElementById('uploadForm');
@@ -64,29 +65,44 @@ app.get('/', (req, res) => {
             }
         });
 
-        // Helper to turn the PDF file into a text string
-        function convertFileToBase64(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => resolve(reader.result.split(',')[1]);
-                reader.onerror = error => reject(error);
-            });
+        // Function to extract text locally inside the client's browser window
+        async function extractTextFromPdf(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let fullText = "";
+            
+            // Read up to the first 6 pages to stay safely within AI context thresholds
+            const pagesToRead = Math.min(pdf.numPages, 6);
+            for (let i = 1; i <= pagesToRead; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(" ");
+                fullText += pageText + " ";
+            }
+            return fullText;
         }
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             submitBtn.disabled = true;
-            submitBtn.textContent = "Processing PDF & Generating... ⏳";
+            submitBtn.textContent = "Extracting text details locally... 📝";
             outputSection.classList.add('hidden');
 
             try {
                 const file = fileInput.files[0];
-                const base64String = await convertFileToBase64(file);
+                const extractedText = await extractTextFromPdf(file);
 
+                if (!extractedText.trim()) {
+                    alert("Could not extract readable text from this PDF file.");
+                    return;
+                }
+
+                submitBtn.textContent = "Processing Marketing Kit... ⏳";
+
+                // Post a clean, safe JSON string instead of an overloaded binary file stream
                 const response = await fetch('/api/upload', { 
                     method: 'POST', 
-                    body: JSON.stringify({ pdfData: base64String }),
+                    body: JSON.stringify({ text: extractedText }),
                     headers: { 'Content-Type': 'application/json' }
                 });
                 
@@ -95,9 +111,10 @@ app.get('/', (req, res) => {
                     localStorage.setItem('lastGeneratedKit', data.marketingKit);
                     window.location.href = "https://buy.stripe.com/test_00w6oG37U4tD6h6bYs4Vy00";
                 } else {
-                    alert(data.error || "An unexpected error occurred.");
+                    alert(data.error || "An unexpected processing error occurred.");
                 }
             } catch (err) {
+                console.error(err);
                 alert("Failed to connect to the processing server.");
             } finally {
                 submitBtn.disabled = false;
@@ -110,33 +127,19 @@ app.get('/', (req, res) => {
   `);
 });
 
-// 2. BACKEND API ROUTE: Unpacks base64 strings back to a binary buffer safely
-function parsePdfBuffer(buffer) {
-  return new Promise((resolve, reject) => {
-    let text = "";
-    new PdfReader().parseBuffer(buffer, (err, item) => {
-      if (err) reject(err);
-      else if (item && item.text) text += item.text + " ";
-      else if (!item) resolve(text);
-    });
-  });
-}
-
+// 2. BACKEND API ROUTE: Receives the pre-extracted data string cleanly
 app.post('/api/upload', async (req, res) => {
   try {
-    if (!req.body || !req.body.pdfData) {
-      return res.status(400).json({ error: "No PDF string packet received." });
+    const { text } = req.body;
+    if (!text || text.trim().length === 0) {
+      return res.status(400).json({ error: "No text data package received." });
     }
 
-    console.log("Unpacking safe string back to memory buffer...");
-    const pdfBuffer = Buffer.from(req.body.pdfData, 'base64');
-    
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const propertyText = await parsePdfBuffer(pdfBuffer);
-
+    
     const prompt = `
       You are an elite real estate copywriter. Analyze the following property text:
-      "${propertyText.substring(0, 4000)}" 
+      "${text.substring(0, 5000)}" 
       Generate a professional marketing kit with an [MLS LISTING] and a [SOCIAL MEDIA SCRIPT].
     `;
 
@@ -149,8 +152,8 @@ app.post('/api/upload', async (req, res) => {
     res.json({ marketingKit: response.choices.message.content });
 
   } catch (error) {
-    console.error("Server processing error:", error);
-    res.status(500).json({ error: "Processing failed inside the cloud function node." });
+    console.error("Server execution error:", error);
+    res.status(500).json({ error: "Failed to generate marketing kit from input parameters." });
   }
 });
 
