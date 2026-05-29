@@ -5,11 +5,11 @@ require('dotenv').config();
 
 const app = express();
 
-// Use Express built-in raw body parser to handle binary PDF data directly in memory
-app.use(express.raw({ type: 'application/pdf', limit: '10mb' }));
-app.use(express.json());
+// Increase JSON limits so your serverless app can accept large base64 text strings
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// 1. FRONTEND HOME ROUTE: Inline HTML Interface
+// 1. FRONTEND HOME ROUTE: Interactive Web Dashboard
 app.get('/', (req, res) => {
   res.send(`
 <!DOCTYPE html>
@@ -64,6 +64,16 @@ app.get('/', (req, res) => {
             }
         });
 
+        // Helper to turn the PDF file into a text string
+        function convertFileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = error => reject(error);
+            });
+        }
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             submitBtn.disabled = true;
@@ -71,12 +81,13 @@ app.get('/', (req, res) => {
             outputSection.classList.add('hidden');
 
             try {
-                // Send the raw binary file directly in the body for maximum speed in serverless functions
                 const file = fileInput.files[0];
+                const base64String = await convertFileToBase64(file);
+
                 const response = await fetch('/api/upload', { 
                     method: 'POST', 
-                    body: file,
-                    headers: { 'Content-Type': 'application/pdf' }
+                    body: JSON.stringify({ pdfData: base64String }),
+                    headers: { 'Content-Type': 'application/json' }
                 });
                 
                 const data = await response.json();
@@ -99,7 +110,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// 2. BACKEND API ROUTE: Reads file buffers strictly from system memory
+// 2. BACKEND API ROUTE: Unpacks base64 strings back to a binary buffer safely
 function parsePdfBuffer(buffer) {
   return new Promise((resolve, reject) => {
     let text = "";
@@ -113,12 +124,15 @@ function parsePdfBuffer(buffer) {
 
 app.post('/api/upload', async (req, res) => {
   try {
-    if (!req.body || req.body.length === 0) {
-      return res.status(400).json({ error: "Empty file stream received." });
+    if (!req.body || !req.body.pdfData) {
+      return res.status(400).json({ error: "No PDF string packet received." });
     }
 
+    console.log("Unpacking safe string back to memory buffer...");
+    const pdfBuffer = Buffer.from(req.body.pdfData, 'base64');
+    
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const propertyText = await parsePdfBuffer(req.body);
+    const propertyText = await parsePdfBuffer(pdfBuffer);
 
     const prompt = `
       You are an elite real estate copywriter. Analyze the following property text:
