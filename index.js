@@ -66,7 +66,7 @@ app.get('/', (req, res) => {
             }
         });
 
-        form.addEventListener('submit', async (e) => {
+         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             submitBtn.disabled = true;
             submitBtn.textContent = "Processing PDF & Generating... ⏳";
@@ -78,15 +78,19 @@ app.get('/', (req, res) => {
             try {
                 const response = await fetch('/api/upload', { method: 'POST', body: formData });
                 const data = await response.json();
+                
                 if (data.marketingKit) {
-                    kitResult.textContent = data.marketingKit;
-                    outputSection.classList.remove('hidden');
-                    outputSection.scrollIntoView({ behavior: 'smooth' });
+                    // 1. Store the generated text securely in the browser's temporary memory
+                    localStorage.setItem('lastGeneratedKit', data.marketingKit);
+                    
+                    // 2. Instantly forward them to your Stripe payment page to swipe their card
+                    // REPLACE THE URL BELOW WITH YOUR ACTUAL STRIPE PAYMENT LINK
+                    window.location.href = "https://buy.stripe.com/test_00w6oG37U4tD6h6bYs4Vy00";
                 } else {
                     alert(data.error || "An unexpected error occurred.");
                 }
             } catch (err) {
-                alert("Failed to connect to the server.");
+                alert("Failed to connect to the processing server.");
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = "Generate Marketing Kit ($20)";
