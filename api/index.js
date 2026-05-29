@@ -140,7 +140,5 @@ app.post('/api/upload', upload.single('propertyPdf'), async (req, res) => {
   }
 });
 
-// Export the Express server wrapped inside Vercel's native serverless handler
-export default async function handler(req, res) {
-  return app(req, res);
-}
+// Export the Express app for Vercel Serverless
+module.exports = app;
