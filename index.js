@@ -1,17 +1,15 @@
 const express = require('express');
-const multer = require('multer');
 const { PdfReader } = require('pdfreader');
 const { OpenAI } = require('openai');
-const path = require('path');
 require('dotenv').config();
 
 const app = express();
-const upload = multer({ dest: '/tmp/' }); // Serverless-safe write directory
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// Use Express built-in raw body parser to handle binary PDF data directly in memory
+app.use(express.raw({ type: 'application/pdf', limit: '10mb' }));
 app.use(express.json());
 
-// 1. FRONTEND HOME ROUTE: Spits out the responsive web interface instantly
+// 1. FRONTEND HOME ROUTE: Inline HTML Interface
 app.get('/', (req, res) => {
   res.send(`
 <!DOCTYPE html>
@@ -66,26 +64,25 @@ app.get('/', (req, res) => {
             }
         });
 
-         form.addEventListener('submit', async (e) => {
+        form.addEventListener('submit', async (e) => {
             e.preventDefault();
             submitBtn.disabled = true;
             submitBtn.textContent = "Processing PDF & Generating... ⏳";
             outputSection.classList.add('hidden');
 
-            const formData = new FormData();
-            formData.append('propertyPdf', fileInput.files[0]);
-
             try {
-                const response = await fetch('/api/upload', { method: 'POST', body: formData });
-                const data = await response.json();
+                // Send the raw binary file directly in the body for maximum speed in serverless functions
+                const file = fileInput.files[0];
+                const response = await fetch('/api/upload', { 
+                    method: 'POST', 
+                    body: file,
+                    headers: { 'Content-Type': 'application/pdf' }
+                });
                 
+                const data = await response.json();
                 if (data.marketingKit) {
-                    // 1. Store the generated text securely in the browser's temporary memory
                     localStorage.setItem('lastGeneratedKit', data.marketingKit);
-                    
-                    // 2. Instantly forward them to your Stripe payment page to swipe their card
-                    // REPLACE THE URL BELOW WITH YOUR ACTUAL STRIPE PAYMENT LINK
-                    window.location.href = "https://buy.stripe.com/test_00w6oG37U4tD6h6bYs4Vy00";
+                    window.location.href = "PASTE_YOUR_STRIPE_LINK_HERE";
                 } else {
                     alert(data.error || "An unexpected error occurred.");
                 }
@@ -102,11 +99,11 @@ app.get('/', (req, res) => {
   `);
 });
 
-// 2. BACKEND API ROUTE: Handles incoming PDF file uploads natively
-function parsePdf(filePath) {
+// 2. BACKEND API ROUTE: Reads file buffers strictly from system memory
+function parsePdfBuffer(buffer) {
   return new Promise((resolve, reject) => {
     let text = "";
-    new PdfReader().parseFileItems(filePath, (err, item) => {
+    new PdfReader().parseBuffer(buffer, (err, item) => {
       if (err) reject(err);
       else if (item && item.text) text += item.text + " ";
       else if (!item) resolve(text);
@@ -114,13 +111,14 @@ function parsePdf(filePath) {
   });
 }
 
-app.post('/api/upload', upload.single('propertyPdf'), async (req, res) => {
+app.post('/api/upload', async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded." });
+    if (!req.body || req.body.length === 0) {
+      return res.status(400).json({ error: "Empty file stream received." });
     }
 
-    const propertyText = await parsePdf(req.file.path);
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const propertyText = await parsePdfBuffer(req.body);
 
     const prompt = `
       You are an elite real estate copywriter. Analyze the following property text:
@@ -138,7 +136,7 @@ app.post('/api/upload', upload.single('propertyPdf'), async (req, res) => {
 
   } catch (error) {
     console.error("Server processing error:", error);
-    res.status(500).json({ error: "Failed to generate marketing kit." });
+    res.status(500).json({ error: "Processing failed inside the cloud function node." });
   }
 });
 
