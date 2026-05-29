@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
+    "vercel-build": "echo 'Skipping compilation step... Running live Node server.'"
   },
   "keywords": [],
   "author": "",
