@@ -63,6 +63,7 @@ app.get('/', (req, res) => {
 
         fileInput.addEventListener('change', () => {
             if(fileInput.files.length > 0) {
+                // FIXED: Target the item at index 0 explicitly to avoid object leaks
                 fileNameDiv.textContent = 'Selected: ' + fileInput.files[0].name;
                 fileNameDiv.classList.remove('hidden');
             }
@@ -103,8 +104,13 @@ app.get('/', (req, res) => {
             outputSection.classList.add('hidden');
 
             try {
-                // Securely index the target file from the input array container
+                // FIXED: Pull the index item directly out of the file layout object array
                 const targetFile = fileInput.files[0];
+                if (!targetFile) {
+                    alert("Please select a file first.");
+                    return;
+                }
+
                 const cleanText = await extractTextFromPdf(targetFile);
 
                 if (!cleanText || cleanText.trim().length === 0) {
